@@ -1,0 +1,8 @@
+@echo off
+cd /d "%~dp0"
+if not exist "app\main.py" (
+  echo ERROR: Run from audit-shield repo root (folder with app\ and this file).
+  exit /b 1
+)
+set PORT=8101
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port %PORT%

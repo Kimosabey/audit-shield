@@ -27,14 +27,54 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { postQuery, type QueryResponse } from '@/lib/api'
+import { cn } from '@/lib/utils'
 
-const schema = z.object({
-  query: z.string().min(1, 'Enter an audit question or clause to verify.'),
-  model: z.string().optional(),
-  temperature: z.number().min(0).max(2).optional(),
-})
+/** Sentinel for “type your own” — must match an option value, not a real Ollama tag. */
+const MODEL_CUSTOM = '__custom__' as const
+
+const MODEL_PRESETS: { value: string; label: string }[] = [
+  { value: '', label: 'Default (server)' },
+  { value: 'llama3.2', label: 'llama3.2' },
+  { value: 'llama3.3', label: 'llama3.3' },
+  { value: 'phi3', label: 'phi3' },
+  { value: 'qwen2.5:14b', label: 'qwen2.5:14b' },
+  { value: MODEL_CUSTOM, label: 'Custom…' },
+]
+
+const schema = z
+  .object({
+    query: z.string().min(1, 'Enter an audit question or clause to verify.'),
+    modelChoice: z.string(),
+    modelCustom: z.string().optional(),
+    temperature: z.number().min(0).max(2).optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.modelChoice === MODEL_CUSTOM && !data.modelCustom?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Enter a custom model name.',
+        path: ['modelCustom'],
+      })
+    }
+  })
 
 type FormValues = z.infer<typeof schema>
+
+function modelFieldsFromApiModel(exModel?: string): Pick<FormValues, 'modelChoice' | 'modelCustom'> {
+  const t = exModel?.trim()
+  if (!t) return { modelChoice: '', modelCustom: '' }
+  const match = MODEL_PRESETS.find(
+    (p) => p.value !== '' && p.value !== MODEL_CUSTOM && p.value === t,
+  )
+  if (match) return { modelChoice: match.value, modelCustom: '' }
+  return { modelChoice: MODEL_CUSTOM, modelCustom: t }
+}
+
+function resolvedModel(values: FormValues): string | null {
+  if (values.modelChoice === MODEL_CUSTOM) return values.modelCustom!.trim()
+  if (!values.modelChoice) return null
+  return values.modelChoice
+}
 
 type AuditRow = {
   request_id: string
@@ -42,14 +82,54 @@ type AuditRow = {
   models: string
 }
 
+const AUDIT_EXAMPLES: {
+  label: string
+  query: string
+  model?: string
+  temperature?: number
+}[] = [
+  {
+    label: 'Warranty + part',
+    query:
+      'Summarize warranty obligations for part WDG-4401 and cite the controlling section and chunk IDs.',
+    temperature: 0.2,
+  },
+  {
+    label: 'Lockout/tagout',
+    query:
+      'What steps are required for lockout/tagout on packaged RTU units per our maintenance policy?',
+  },
+  {
+    label: 'Pressure / safety',
+    query:
+      'List maximum allowable working pressure and relief valve setpoints for chilled-water riser PRV-03; cite policy language.',
+  },
+  {
+    label: 'Record retention',
+    query:
+      'How long must signed commissioning checklists for AHUs be retained under our audit program?',
+  },
+  {
+    label: 'Contradiction check',
+    query:
+      'Does bulletin MB-2024-07 conflict with SOP-HVAC-114 on filter change intervals? Cite admitted chunks only.',
+  },
+  {
+    label: 'Term definition',
+    query: 'Define “corrective maintenance” as used in section 4.2 of policy_master_v3.',
+  },
+]
+
 export function QueryPage() {
   const [result, setResult] = useState<QueryResponse | null>(null)
   const [history, setHistory] = useState<AuditRow[]>([])
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { query: '', model: '', temperature: 0.2 },
+    defaultValues: { query: '', modelChoice: '', modelCustom: '', temperature: 0.2 },
   })
+
+  const modelChoice = form.watch('modelChoice')
 
   const mutation = useMutation({
     mutationFn: postQuery,
@@ -73,7 +153,7 @@ export function QueryPage() {
   function onSubmit(values: FormValues) {
     mutation.mutate({
       query: values.query,
-      model: values.model?.trim() || null,
+      model: resolvedModel(values) || null,
       temperature:
         values.temperature === undefined || Number.isNaN(values.temperature)
           ? null
@@ -133,8 +213,8 @@ export function QueryPage() {
                 New audit query
               </CardTitle>
               <CardDescription>
-                Ask a question or paste a clause. Optional model overrides your
-                server default.
+                Ask a question or paste a clause. Pick a preset model or choose
+                Custom to type an Ollama tag; Default uses the server setting.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -145,6 +225,27 @@ export function QueryPage() {
               >
                 <div className="space-y-2">
                   <Label htmlFor="query">Question</Label>
+                  <p className="text-xs text-zinc-500">Try an example</p>
+                  <div className="flex flex-wrap gap-2">
+                    {AUDIT_EXAMPLES.map((ex) => (
+                      <Button
+                        key={ex.label}
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-auto max-w-full whitespace-normal py-1.5 text-left text-xs font-normal"
+                        onClick={() => {
+                          form.setValue('query', ex.query)
+                          const m = modelFieldsFromApiModel(ex.model)
+                          form.setValue('modelChoice', m.modelChoice)
+                          form.setValue('modelCustom', m.modelCustom)
+                          form.setValue('temperature', ex.temperature ?? 0.2)
+                        }}
+                      >
+                        {ex.label}
+                      </Button>
+                    ))}
+                  </div>
                   <Textarea
                     id="query"
                     placeholder="Example: Summarize warranty obligations for part WDG-4401 and cite the controlling section."
@@ -158,12 +259,38 @@ export function QueryPage() {
                 </div>
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
-                    <Label htmlFor="model">Model (optional)</Label>
-                    <Input
-                      id="model"
-                      placeholder="e.g. llama3.2"
-                      {...form.register('model')}
-                    />
+                    <Label htmlFor="modelChoice">Model (optional)</Label>
+                    <select
+                      id="modelChoice"
+                      className={cn(
+                        'flex h-10 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 disabled:cursor-not-allowed disabled:opacity-50',
+                      )}
+                      {...form.register('modelChoice')}
+                    >
+                      {MODEL_PRESETS.map((p) => (
+                        <option key={p.value || 'default'} value={p.value}>
+                          {p.label}
+                        </option>
+                      ))}
+                    </select>
+                    {modelChoice === MODEL_CUSTOM ? (
+                      <div className="space-y-1 pt-1">
+                        <Label htmlFor="modelCustom" className="text-xs text-zinc-500">
+                          Custom model tag
+                        </Label>
+                        <Input
+                          id="modelCustom"
+                          placeholder="e.g. mistral:7b-instruct"
+                          autoComplete="off"
+                          {...form.register('modelCustom')}
+                        />
+                        {form.formState.errors.modelCustom?.message ? (
+                          <p className="text-sm text-red-600">
+                            {form.formState.errors.modelCustom.message}
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="temperature">Temperature</Label>
