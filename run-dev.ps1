@@ -1,4 +1,5 @@
 # Run API from repo root (fixes "No module named 'app'" if you were inside app/).
+# Or use run-all-dev.ps1 to start this plus Vite in one go (new PowerShell window for the API).
 # Usage: .\run-dev.ps1   OR   from repo root: powershell -ExecutionPolicy Bypass -File .\run-dev.ps1
 
 $ErrorActionPreference = "Stop"

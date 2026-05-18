@@ -32,9 +32,9 @@ Dev proxy: Vite `server.proxy` → `http://localhost:8101`. Prod: `VITE_API_BASE
 
 ## Current status
 
-- FastAPI scaffold + `/health` live.
-- **`web/`** — Vite template present; **dependencies + Aceternity-style layout + `/v1/query` UI** still to land (see M1).
-- Docker: API-only compose; add **static SPA** or **sidecar** when M1 UI ships.
+- **`web/`** — Query UI with model presets, `/v1/query`, OpenAPI link.
+- **Backend** — `POST /v1/query` and `/v1/query/stream` run **pgvector** retrieval, Ollama **auditor** JSON gate, synthesis, and persist `query_run` / `chunk_audit`. Ingest: `POST /v1/ingest/document` (JSON) and `POST /v1/ingest/upload` (multipart). Stub pipeline removed; `DATABASE_URL` and `OLLAMA_BASE_URL` required for live paths.
+- Docker: `docker-compose.yml` includes Postgres (pgvector). Ollama expected on host or Tailscale URL.
 
 ## Docs
 

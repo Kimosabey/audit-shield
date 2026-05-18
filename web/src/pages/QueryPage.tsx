@@ -1,12 +1,15 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import {
   BookOpen,
   ClipboardCheck,
+  Database,
   ExternalLink,
+  FileText,
   Loader2,
   Shield,
+  Upload,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
@@ -26,7 +29,13 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { postQuery, type QueryResponse } from '@/lib/api'
+import {
+  getHealth,
+  postIngestDocument,
+  postIngestUpload,
+  postQuery,
+  type QueryResponse,
+} from '@/lib/api'
 import { cn } from '@/lib/utils'
 
 /** Sentinel for “type your own” — must match an option value, not a real Ollama tag. */
@@ -120,9 +129,28 @@ const AUDIT_EXAMPLES: {
   },
 ]
 
+const ingestSchema = z.object({
+  title: z.string().optional(),
+  sourceUri: z.string().optional(),
+  text: z
+    .string()
+    .transform((t) => t.trim())
+    .pipe(z.string().min(1, 'Paste or type document text to index.')),
+})
+
+type IngestFormValues = z.infer<typeof ingestSchema>
+
 export function QueryPage() {
   const [result, setResult] = useState<QueryResponse | null>(null)
   const [history, setHistory] = useState<AuditRow[]>([])
+  const [uploadFile, setUploadFile] = useState<File | null>(null)
+
+  const healthQuery = useQuery({
+    queryKey: ['audit-shield-health'],
+    queryFn: getHealth,
+    refetchInterval: 30_000,
+    retry: 2,
+  })
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -130,6 +158,36 @@ export function QueryPage() {
   })
 
   const modelChoice = form.watch('modelChoice')
+
+  const ingestForm = useForm<IngestFormValues>({
+    resolver: zodResolver(ingestSchema),
+    defaultValues: { title: '', sourceUri: '', text: '' },
+  })
+
+  const ingestMutation = useMutation({
+    mutationFn: postIngestDocument,
+    onSuccess: (data) => {
+      toast.success('Document indexed', {
+        description: `${data.chunks_indexed} chunks — ${data.title}`,
+      })
+      ingestForm.reset({ title: '', sourceUri: '', text: '' })
+    },
+    onError: (e: Error) => toast.error('Ingest failed', { description: e.message }),
+  })
+
+  const uploadIngestMutation = useMutation({
+    mutationFn: (args: { file: File; title?: string; source_uri?: string }) =>
+      postIngestUpload(args.file, { title: args.title, source_uri: args.source_uri }),
+    onSuccess: (data) => {
+      toast.success('File indexed', {
+        description: `${data.chunks_indexed} chunks — ${data.title}`,
+      })
+      setUploadFile(null)
+      const el = document.getElementById('ingest-file') as HTMLInputElement | null
+      if (el) el.value = ''
+    },
+    onError: (e: Error) => toast.error('Upload ingest failed', { description: e.message }),
+  })
 
   const mutation = useMutation({
     mutationFn: postQuery,
@@ -161,6 +219,43 @@ export function QueryPage() {
     })
   }
 
+  function onIngestSubmit(values: IngestFormValues) {
+    ingestMutation.mutate({
+      text: values.text,
+      title: values.title?.trim() || undefined,
+      source_uri: values.sourceUri?.trim() || undefined,
+    })
+  }
+
+  function onUploadIngest() {
+    if (!uploadFile) {
+      toast.error('Choose a file', { description: 'Select a PDF or plain-text file to index.' })
+      return
+    }
+    const { title, sourceUri } = ingestForm.getValues()
+    uploadIngestMutation.mutate({
+      file: uploadFile,
+      title: title?.trim() || undefined,
+      source_uri: sourceUri?.trim() || undefined,
+    })
+  }
+
+  async function loadSamplePolicyText() {
+    try {
+      const r = await fetch('/samples/policy-warranty-sample.txt')
+      if (!r.ok) throw new Error(r.statusText || String(r.status))
+      const txt = await r.text()
+      ingestForm.setValue('text', txt)
+      ingestForm.setValue('title', 'policy_aw_2024_sample')
+      ingestForm.setValue('sourceUri', 'sample://policy-warranty-sample.txt')
+      toast.success('Sample policy loaded', {
+        description: 'Run Ingest pasted text, or save as .txt and use Upload.',
+      })
+    } catch (e) {
+      toast.error('Could not load sample', { description: (e as Error).message })
+    }
+  }
+
   return (
     <div className="relative min-h-screen">
       <GridBackground />
@@ -177,13 +272,43 @@ export function QueryPage() {
               <h1 className="text-lg font-semibold text-zinc-900">AuditShield</h1>
             </div>
           </div>
-          <Button variant="outline" size="sm" asChild>
-            <a href="/docs" target="_blank" rel="noreferrer">
-              <BookOpen className="size-4" />
-              OpenAPI
-              <ExternalLink className="size-3 opacity-60" />
-            </a>
-          </Button>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {healthQuery.isPending ? (
+              <Badge variant="outline" className="gap-1">
+                <Loader2 className="size-3 animate-spin" aria-hidden />
+                Checking API…
+              </Badge>
+            ) : healthQuery.isError ? (
+              <div className="flex flex-col items-end gap-1 text-right">
+                <Badge variant="danger" title={(healthQuery.error as Error).message}>
+                  API unreachable
+                </Badge>
+                <p className="max-w-[220px] text-[10px] leading-snug text-zinc-500">
+                  Start the API from the <code className="rounded bg-zinc-100 px-0.5">audit-shield</code> folder:{' '}
+                  <code className="whitespace-nowrap rounded bg-zinc-100 px-0.5">.\run-dev.ps1</code> or{' '}
+                  <code className="whitespace-nowrap rounded bg-zinc-100 px-0.5">.\run-all-dev.ps1</code>
+                </p>
+              </div>
+            ) : (
+              <>
+                <Badge
+                  variant={healthQuery.data.database_configured ? 'success' : 'warning'}
+                  className="gap-1"
+                >
+                  <Database className="size-3" aria-hidden />
+                  {healthQuery.data.database_configured ? 'Database OK' : 'DB not configured'}
+                </Badge>
+                <Badge variant="outline">API OK</Badge>
+              </>
+            )}
+            <Button variant="outline" size="sm" asChild>
+              <a href="/docs" target="_blank" rel="noreferrer">
+                <BookOpen className="size-4" />
+                OpenAPI
+                <ExternalLink className="size-3 opacity-60" />
+              </a>
+            </Button>
+          </div>
         </div>
       </header>
 
@@ -204,6 +329,141 @@ export function QueryPage() {
             </p>
           </div>
         </SpotlightHero>
+
+        <MovingBorder>
+          <Card className="border-0 shadow-none">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Upload className="size-5 text-emerald-600" aria-hidden />
+                Index documents
+              </CardTitle>
+              <CardDescription>
+                Paste text or upload a PDF / plain-text file. Text is chunked, embedded via Ollama, and stored in
+                Postgres. Requires{' '}
+                <code className="rounded bg-zinc-100 px-1 text-xs">OLLAMA_BASE_URL</code> and your embed model (e.g.{' '}
+                <code className="rounded bg-zinc-100 px-1 text-xs">nomic-embed-text</code>).
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-8">
+              <form
+                className="space-y-4"
+                onSubmit={ingestForm.handleSubmit(onIngestSubmit)}
+                noValidate
+              >
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                  <p className="text-sm font-medium text-zinc-800">Paste text</p>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 shrink-0 text-xs text-zinc-600"
+                    disabled={ingestMutation.isPending || uploadIngestMutation.isPending}
+                    onClick={() => void loadSamplePolicyText()}
+                  >
+                    <FileText className="size-4" aria-hidden />
+                    Load sample policy
+                  </Button>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="ingest-title">Title (optional)</Label>
+                    <Input
+                      id="ingest-title"
+                      placeholder="e.g. warranty_bulletin_v3"
+                      {...ingestForm.register('title')}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="ingest-source">Source URI (optional)</Label>
+                    <Input
+                      id="ingest-source"
+                      placeholder="e.g. file://policies/aw-2024.pdf"
+                      {...ingestForm.register('sourceUri')}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="ingest-text">Document text</Label>
+                  <Textarea
+                    id="ingest-text"
+                    placeholder="Paste policy text, SOP excerpts, or other source material to search later."
+                    className="min-h-[140px]"
+                    {...ingestForm.register('text')}
+                  />
+                  {ingestForm.formState.errors.text?.message ? (
+                    <p className="text-sm text-red-600">
+                      {ingestForm.formState.errors.text.message}
+                    </p>
+                  ) : null}
+                </div>
+                <Button
+                  type="submit"
+                  variant="outline"
+                  disabled={ingestMutation.isPending || uploadIngestMutation.isPending}
+                >
+                  {ingestMutation.isPending ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" />
+                      Embedding &amp; saving…
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="size-4" />
+                      Ingest pasted text
+                    </>
+                  )}
+                </Button>
+              </form>
+
+              <div className="relative" aria-hidden>
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t border-zinc-200" />
+                </div>
+                <div className="relative flex justify-center text-xs font-medium uppercase tracking-wider">
+                  <span className="bg-white px-3 text-zinc-500">Or upload</span>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <p className="text-sm font-medium text-zinc-800">PDF or plain text file</p>
+                <div className="space-y-2">
+                  <Label htmlFor="ingest-file">File</Label>
+                  <Input
+                    id="ingest-file"
+                    type="file"
+                    accept=".pdf,application/pdf,.txt,text/plain"
+                    disabled={ingestMutation.isPending || uploadIngestMutation.isPending}
+                    onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
+                  />
+                  <p className="text-xs leading-relaxed text-zinc-500">
+                    Optional title and source above apply to uploads too. If title is empty, the server uses the file
+                    name. For a ready-made <code className="rounded bg-zinc-100 px-1">.txt</code>, use{' '}
+                    <code className="break-all rounded bg-zinc-100 px-1">samples/policy-warranty-sample.txt</code> in
+                    this repo (same text as <strong>Load sample policy</strong>).
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={ingestMutation.isPending || uploadIngestMutation.isPending}
+                  onClick={onUploadIngest}
+                >
+                  {uploadIngestMutation.isPending ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" />
+                      Extracting, embedding…
+                    </>
+                  ) : (
+                    <>
+                      <FileText className="size-4" aria-hidden />
+                      Upload &amp; ingest file
+                    </>
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </MovingBorder>
 
         <MovingBorder>
           <Card className="border-0 shadow-none">
@@ -348,19 +608,23 @@ export function QueryPage() {
                   <h3 className="mb-2 text-sm font-semibold text-zinc-800">
                     Citations
                   </h3>
-                  <ul className="space-y-2">
-                    {expanded.citations.map((c) => (
-                      <li
-                        key={`${c.chunk_id}-${c.source}`}
-                        className="flex flex-wrap items-center gap-2 text-sm"
-                      >
-                        <Badge variant="info" className="tabular-nums">
-                          {c.chunk_id}
-                        </Badge>
-                        <span className="text-zinc-600">{c.source}</span>
-                      </li>
-                    ))}
-                  </ul>
+                  {expanded.citations.length === 0 ? (
+                    <p className="text-sm text-zinc-500">No citations for this run (empty corpus or no admitted chunks).</p>
+                  ) : (
+                    <ul className="space-y-2">
+                      {expanded.citations.map((c) => (
+                        <li
+                          key={`${c.chunk_id}-${c.source}`}
+                          className="flex flex-wrap items-center gap-2 text-sm"
+                        >
+                          <Badge variant="info" className="tabular-nums">
+                            {c.chunk_id}
+                          </Badge>
+                          <span className="text-zinc-600">{c.source}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -369,7 +633,7 @@ export function QueryPage() {
               <CardHeader>
                 <CardTitle>Retrieval &amp; auditor steps</CardTitle>
                 <CardDescription>
-                  Ordered pipeline stages (stub or live Ollama when configured).
+                  Ordered pipeline stages (embedding, retrieval, auditor, synthesis when corpus has data).
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -400,31 +664,41 @@ export function QueryPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {expanded.chunks.map((ch) => (
-                  <div
-                    key={ch.id}
-                    className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm"
-                  >
-                    <div className="mb-2 flex flex-wrap items-center gap-2">
-                      <Badge variant="default" className="tabular-nums">
-                        {ch.id}
-                      </Badge>
-                      <Badge
-                        variant={ch.admitted ? 'success' : 'danger'}
-                        className="tabular-nums"
-                      >
-                        {ch.admitted ? 'Admitted' : 'Rejected'}
-                      </Badge>
-                      <Badge variant="outline" className="tabular-nums">
-                        score {ch.score.toFixed(2)}
-                      </Badge>
-                      <span className="text-xs text-zinc-500">{ch.source}</span>
-                    </div>
-                    <p className="text-sm leading-relaxed text-zinc-700">
-                      {ch.text}
-                    </p>
-                  </div>
-                ))}
+                {expanded.chunks.length === 0 ? (
+                  <p className="text-sm text-zinc-500">
+                    No retrieved chunks (empty index or early exit). Use <strong>Index document text</strong> above first.
+                  </p>
+                ) : (
+                  <>
+                    {expanded.chunks.map((ch) => {
+                      return (
+                        <div
+                          key={ch.id}
+                          className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm"
+                        >
+                          <div className="mb-2 flex flex-wrap items-center gap-2">
+                            <Badge variant="default" className="tabular-nums">
+                              {ch.id}
+                            </Badge>
+                            <Badge
+                              variant={ch.admitted ? 'success' : 'danger'}
+                              className="tabular-nums"
+                            >
+                              {ch.admitted ? 'Admitted' : 'Rejected'}
+                            </Badge>
+                            <Badge variant="outline" className="tabular-nums">
+                              score {ch.score.toFixed(2)}
+                            </Badge>
+                            <span className="text-xs text-zinc-500">{ch.source}</span>
+                          </div>
+                          <p className="text-sm leading-relaxed text-zinc-700">
+                            {ch.text}
+                          </p>
+                        </div>
+                      )
+                    })}
+                  </>
+                )}
               </CardContent>
             </Card>
           </motion.section>

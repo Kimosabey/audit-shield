@@ -4,9 +4,10 @@ Manual cases for the **FastAPI** service (`app/main.py`) and the **Vite** UI (`w
 
 **Prerequisites**
 
-- API reachable at `http://127.0.0.1:8101` (from repo root: `python -m uvicorn app.main:app --reload --port 8101`, or `.\run-dev.ps1`, or from `app/`: `.\run-uvicorn.ps1`).
-- Optional: set `OLLAMA_BASE_URL` (e.g. `http://127.0.0.1:11434`) to exercise live synthesis instead of stub-only answers.
+- **Postgres + pgvector** running; `.env` has **`DATABASE_URL`** (`postgresql+asyncpg://…`) and **`OLLAMA_BASE_URL`**. DBeaver: see **[`DATABASE_AND_DBEAVER.md`](../../docs/DATABASE_AND_DBEAVER.md)** in the suite workspace (host port **5433**).
+- API from repo root (see [README](../README.md#run-locally)).
 - Web: `cd web && npm run dev` — UI usually `http://localhost:5173` with `/v1` proxied to `8101`.
+- Ingest sample text first: `POST /v1/ingest/document` with `{"text":"Warranty for WDG-4401 requires 24 month retention.","title":"demo"}`.
 
 Replace `$BASE` below if you use another host or port.
 
@@ -20,7 +21,7 @@ BASE=http://127.0.0.1:8101
 
 | ID | Case | Steps | Expected |
 |----|------|--------|----------|
-| API-H1 | Health | `GET $BASE/health` | `200`, JSON with `"status":"ok"`, `"service":"audit-shield"`, numeric `port` |
+| API-H1 | Health | `GET $BASE/health` | `200`, JSON includes `"database_configured": true/false` |
 
 Example:
 
@@ -34,11 +35,9 @@ curl -sS "$BASE/health"
 
 | ID | Case | Body | Expected |
 |----|------|------|----------|
-| API-Q1 | Happy path (stub) | `{"query":"What is the retention period for commissioning records?"}` | `200`; `request_id` (UUID); non-empty `answer`; `steps` length ≥ 1; `chunks` with mix of `admitted` true/false; `citations`; `models` includes `auditor` and `synthesis`; `disclaimer` present |
-| API-Q2 | Default model | Same as Q1, omit `model` | `200`; `models` includes synthesis name matching `AUDIT_DEFAULT_MODEL` or server default (e.g. `llama3.2`) |
-| API-Q3 | Explicit model | `{"query":"Short test","model":"llama3.2"}` | `200`; synthesis model in `models` reflects request |
-| API-Q4 | Null model | `{"query":"Short test","model":null}` | Same effective default as Q2 |
-| API-Q5 | Temperature | `{"query":"Short test","temperature":0.7}` | `200` |
+| API-Q0 | No database | `DATABASE_URL` unset, `POST /v1/query` | `503` |
+| API-Q1 | Happy path | After ingest, `{"query":"What about WDG-4401 warranty?"}` | `200`; real `chunks` from index; `steps` mention pgvector + auditor; persisted rows in DB |
+| API-Q2 | Empty corpus | Fresh DB, no ingest | `200` with message to ingest; `chunks: []` |
 | API-Q6 | Empty query | `{"query":""}` | `422` validation error |
 | API-Q7 | Missing `query` key | `{}` | `422` |
 | API-Q8 | Query too long | `query` string length &gt; 50_000 | `422` |
@@ -53,7 +52,12 @@ curl -sS -X POST "$BASE/v1/query" \
   -d '{"query":"Summarize warranty for part WDG-4401.","temperature":0.2}'
 ```
 
-**Optional — Ollama:** With `OLLAMA_BASE_URL` set and a running Ollama model, re-run API-Q1; `answer` should often differ from the stub template and reflect LLM text (still structured response).
+**Ingest smoke:**
+
+```bash
+curl -sS -X POST "$BASE/v1/ingest/document" -H "Content-Type: application/json" \
+  -d '{"text":"Policy excerpt for commissioning checklists retention: 7 years.","title":"policy"}'
+```
 
 ---
 

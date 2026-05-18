@@ -1,31 +1,56 @@
-import asyncio
+from __future__ import annotations
+
 import json
 import os
-import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-import httpx
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+from pydantic import model_validator
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.database import DATABASE_URL, get_db, get_session_factory, init_db_schema
+from app.models import ChunkRow, DocumentRow
+from app.ollama_client import (
+    OLLAMA_BASE_URL,
+    OLLAMA_EMBED_MODEL,
+    ollama_embed,
+    ollama_embedding_failure_hint,
+)
+from app.pdf_extract import extract_pdf_text
+from app.pipeline import build_query_response, iter_audit_stream
+from app.schemas import QueryRequest, QueryResponse
+from app.text_chunking import chunk_text, normalize_ingest_text
 
 SERVICE_SLUG = "audit-shield"
 PORT = int(os.getenv("PORT", "8101"))
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "").rstrip("/")
-DEFAULT_MODEL = os.getenv("AUDIT_DEFAULT_MODEL", "llama3.2")
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
 _cors = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
 ALLOW_ORIGINS = [o.strip() for o in _cors.split(",") if o.strip()]
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if DATABASE_URL:
+        try:
+            await init_db_schema()
+        except Exception as e:
+            raise RuntimeError(f"Database init failed: {e}") from e
+    yield
+
+
 app = FastAPI(
     title="AuditShield",
-    description="Corrective / audited on-prem RAG (scaffold).",
-    version="0.1.0",
+    description="Corrective / audited on-prem RAG with pgvector + Ollama.",
+    version="0.2.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -37,132 +62,21 @@ app.add_middleware(
 )
 
 
-class QueryRequest(BaseModel):
-    query: str = Field(min_length=1, max_length=50_000)
-    model: str | None = None
-    temperature: float | None = Field(default=None, ge=0, le=2)
+class IngestTextBody(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="ignore")
 
+    text: str = Field(min_length=1, max_length=5_000_000)
+    title: str = Field(default="", max_length=512)
+    source_uri: str = Field(default="", max_length=2048)
 
-class Citation(BaseModel):
-    source: str
-    chunk_id: str
-
-
-class Chunk(BaseModel):
-    id: str
-    text: str
-    score: float
-    admitted: bool
-    source: str
-
-
-class Step(BaseModel):
-    name: str
-    detail: str
-
-
-class ModelRef(BaseModel):
-    role: str
-    name: str
-
-
-class QueryResponse(BaseModel):
-    request_id: str
-    answer: str
-    citations: list[Citation]
-    steps: list[Step]
-    chunks: list[Chunk]
-    models: list[ModelRef]
-    disclaimer: str = (
-        "This output is assistive only; verify against source documents "
-        "and your audit policy."
-    )
-
-
-def _stub_pipeline(query: str, request_id: str, synthesize_model: str) -> QueryResponse:
-    q = query.strip()
-    steps = [
-        Step(name="Embed query", detail="Derived 768-d vector (stub)."),
-        Step(
-            name="Vector + keyword retrieval",
-            detail="Matched 3 candidate chunks from policy index (stub).",
-        ),
-        Step(
-            name="Auditor scoring",
-            detail="Cross-encoder re-rank with admission threshold 0.62 (stub).",
-        ),
-        Step(
-            name="Synthesis",
-            detail=f"Drafted answer with {synthesize_model} (temperature applied).",
-        ),
-    ]
-    chunks = [
-        Chunk(
-            id="CHK-001",
-            text=(
-                f"[Stub] Chunk discussing related requirements for: {q[:120]}"
-                + ("…" if len(q) > 120 else "")
-            ),
-            score=0.81,
-            admitted=True,
-            source="policy_master_v3.pdf · §4.2",
-        ),
-        Chunk(
-            id="CHK-002",
-            text="[Stub] Secondary clause on record retention and traceability IDs.",
-            score=0.58,
-            admitted=False,
-            source="runbook_Q4.pdf · p.12",
-        ),
-        Chunk(
-            id="CHK-003",
-            text="[Stub] Table row for part families and warranty exclusions.",
-            score=0.74,
-            admitted=True,
-            source="warranty_matrix.xlsx · Sheet2",
-        ),
-    ]
-    admitted = [c for c in chunks if c.admitted]
-    citations = [
-        Citation(source=c.source, chunk_id=c.id) for c in admitted[:2]
-    ]
-    answer = (
-        f"[Stub] Based on admitted chunks, the policy narrative for your question "
-        f"centers on traceable records and cited sections. Request `{request_id}` — "
-        "confirm against primary sources before sign-off."
-    )
-    models = [
-        ModelRef(role="auditor", name="cross-encoder-stub"),
-        ModelRef(role="synthesis", name=synthesize_model),
-    ]
-    return QueryResponse(
-        request_id=request_id,
-        answer=answer,
-        citations=citations,
-        steps=steps,
-        chunks=chunks,
-        models=models,
-    )
-
-
-async def _ollama_generate(prompt: str, model: str) -> str | None:
-    if not OLLAMA_BASE_URL:
-        return None
-    try:
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            r = await client.post(
-                f"{OLLAMA_BASE_URL}/api/generate",
-                json={
-                    "model": model,
-                    "prompt": prompt,
-                    "stream": False,
-                },
-            )
-            r.raise_for_status()
-            data = r.json()
-            return str(data.get("response", "")).strip() or None
-    except (httpx.HTTPError, ValueError):
-        return None
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_source_uri_alias(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        if "source_uri" not in data and "sourceUri" in data:
+            return {**data, "source_uri": data.get("sourceUri", "")}
+        return data
 
 
 def _sse(data: dict[str, Any]) -> str:
@@ -171,56 +85,146 @@ def _sse(data: dict[str, Any]) -> str:
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok", "service": SERVICE_SLUG, "port": PORT}
+    return {
+        "status": "ok",
+        "service": SERVICE_SLUG,
+        "port": PORT,
+        "database_configured": bool(DATABASE_URL),
+    }
+
+
+async def _ingest_plain_text(
+    session: AsyncSession,
+    text: str,
+    title: str,
+    source_uri: str,
+) -> dict[str, Any]:
+    if not DATABASE_URL:
+        raise HTTPException(status_code=503, detail="DATABASE_URL is not configured")
+    pieces = chunk_text(text)
+    if not pieces:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "No indexable text in this content (empty or only whitespace/format characters after cleanup). "
+                "For PDFs, use text-based files, not image-only scans."
+            ),
+        )
+    doc = DocumentRow(
+        title=title or "Untitled",
+        source_uri=source_uri or "inline",
+    )
+    session.add(doc)
+    await session.flush()
+
+    n_ok = 0
+    for piece in pieces:
+        emb = await ollama_embed(piece, OLLAMA_EMBED_MODEL)
+        if not emb:
+            continue
+        session.add(
+            ChunkRow(
+                document_id=doc.id,
+                text=piece,
+                source_label=doc.title,
+                embedding=emb,
+            )
+        )
+        n_ok += 1
+    if n_ok == 0:
+        await session.rollback()
+        hint = await ollama_embedding_failure_hint(OLLAMA_EMBED_MODEL)
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "Embedding failed for all chunks. "
+                f"{hint} (embed model: {OLLAMA_EMBED_MODEL!r}, OLLAMA_BASE_URL: {OLLAMA_BASE_URL or '(unset)'})"
+            ),
+        )
+    await session.commit()
+    return {"document_id": str(doc.id), "chunks_indexed": n_ok, "title": doc.title}
+
+
+@app.post("/v1/ingest/document")
+async def ingest_document_json(
+    body: IngestTextBody,
+    session: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    return await _ingest_plain_text(
+        session,
+        body.text,
+        body.title,
+        body.source_uri,
+    )
+
+
+@app.post("/v1/ingest/upload")
+async def ingest_upload(
+    session: AsyncSession = Depends(get_db),
+    file: UploadFile = File(...),
+    title: str | None = Form(None),
+    source_uri: str | None = Form(None),
+) -> dict[str, Any]:
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="Empty file")
+    ct = (file.content_type or "").lower()
+    fname = file.filename or "upload"
+    text_content: str
+    looks_pdf = (
+        ct == "application/pdf"
+        or fname.lower().endswith(".pdf")
+        or raw[:5] == b"%PDF-"
+        or (len(raw) >= 4 and raw[:4] == b"%PDF")
+    )
+    if looks_pdf:
+        try:
+            text_content = extract_pdf_text(raw)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"PDF read failed: {e}") from e
+    else:
+        try:
+            text_content = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            text_content = raw.decode("latin-1", errors="replace")
+
+    text_content = normalize_ingest_text(text_content)
+    if not text_content:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "No extractable text from this file. For PDFs, try text-based PDFs (not image-only scans); "
+                "for .txt, ensure UTF-8 or non-empty content."
+            ),
+        )
+
+    t = (title or "").strip() or fname
+    su = (source_uri or "").strip() or fname
+    return await _ingest_plain_text(session, text_content, t, su)
 
 
 @app.post("/v1/query", response_model=QueryResponse)
-async def query_v1(body: QueryRequest) -> QueryResponse:
-    request_id = str(uuid.uuid4())
-    model = (body.model or "").strip() or DEFAULT_MODEL
-    stub = _stub_pipeline(body.query, request_id, model)
-
-    if OLLAMA_BASE_URL:
-        prompt = (
-            "You are an audit assistant. Answer concisely. "
-            "Do not claim legal compliance. Cite chunk IDs when possible.\n\n"
-            f"Question:\n{body.query}\n\n"
-            "Admitted chunk summaries:\n"
-            + "\n".join(f"- {c.id}: {c.text[:200]}" for c in stub.chunks if c.admitted)
-        )
-        llm_answer = await _ollama_generate(prompt, model)
-        if llm_answer:
-            stub = stub.model_copy(update={"answer": llm_answer})
-
-    return stub
+async def query_v1(
+    body: QueryRequest,
+    session: AsyncSession = Depends(get_db),
+) -> QueryResponse:
+    try:
+        return await build_query_response(session, body)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
 
 
 @app.post("/v1/query/stream")
 async def query_stream(body: QueryRequest) -> StreamingResponse:
-    """Optional SSE: step events then a final `done` payload matching QueryResponse."""
-
     async def gen():
-        request_id = str(uuid.uuid4())
-        model = (body.model or "").strip() or DEFAULT_MODEL
-        stub = _stub_pipeline(body.query, request_id, model)
-
-        yield _sse({"event": "start", "request_id": request_id})
-        for s in stub.steps:
-            yield _sse({"event": "step", "step": s.model_dump()})
-            await asyncio.sleep(0.02)
-
-        if OLLAMA_BASE_URL:
-            prompt = (
-                "You are an audit assistant. One short paragraph. "
-                "No guarantees of compliance.\n\n"
-                f"Question:\n{body.query}"
-            )
-            llm_answer = await _ollama_generate(prompt, model)
-            if llm_answer:
-                yield _sse({"event": "token", "text": llm_answer})
-                stub = stub.model_copy(update={"answer": llm_answer})
-
-        yield _sse({"event": "done", "result": stub.model_dump()})
+        factory = get_session_factory()
+        if factory is None:
+            yield _sse({"event": "error", "detail": "DATABASE_URL is not configured"})
+            yield _sse({"event": "done", "result": None})
+            return
+        async with factory() as session:
+            async for payload in iter_audit_stream(session, body):
+                yield _sse(payload)
 
     return StreamingResponse(gen(), media_type="text/event-stream")
 
@@ -235,5 +239,6 @@ else:
             "service": SERVICE_SLUG,
             "docs": "/docs",
             "health": "/health",
+            "ingest": "/v1/ingest/document",
             "ui": "(dev: run Vite on :5173 or build web to ./static)",
         }

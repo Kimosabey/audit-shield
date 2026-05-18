@@ -1,7 +1,45 @@
 services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: audit
+      POSTGRES_PASSWORD: audit
+      POSTGRES_DB: auditshield
+    ports:
+      - "5433:5432"
+    volumes:
+      - audit_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U audit -d auditshield"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   api:
     build: .
     ports:
       - "8101:8101"
     environment:
       PORT: "8101"
+      DATABASE_URL: postgresql+asyncpg://audit:audit@postgres:5432/auditshield
+      # Ollama: use host install (below) OR the optional `ollama` service + profile.
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Optional local LLM runtime (does not start unless you use profile `ollama`):
+  #   docker compose --profile ollama up -d ollama
+  # Then: docker compose exec ollama ollama pull nomic-embed-text
+  # Host dev (.env) can stay OLLAMA_BASE_URL=http://127.0.0.1:11434 — port is mapped.
+  ollama:
+    profiles: ["ollama"]
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - audit_ollama:/root/.ollama
+
+volumes:
+  audit_pgdata:
+  audit_ollama:

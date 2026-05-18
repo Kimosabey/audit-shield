@@ -1,0 +1,36 @@
+Policy Bulletin AW-2024 (Maintenance & Warranty) — Sample for AuditShield ingest
+==================================================================================
+
+Section 3 — Parts warranty
+3.1 Standard warranty for catalog part WDG-4401 (packaged RTU door gasket kit)
+is twenty-four (24) months from date of installation or thirty (30) months from
+date of shipment, whichever occurs first. Labor for replacement is covered only
+when performed by an authorized service partner under work order class "W-RTU".
+
+3.2 Corrective maintenance is defined as repairs performed after equipment failure
+or alarm that restores the unit to nominal operation; it excludes scheduled
+preventive tasks listed in SOP-HVAC-114.
+
+Section 4 — Lockout / Tagout (LOTO)
+4.1 For packaged RTU units, LOTO shall follow OSHA 1910.147 and site bulletin
+MB-2024-07. Minimum steps: (a) notify operations, (b) isolate all energy sources,
+(c) apply locks and tags per plant map, (d) verify zero energy before work,
+(e) brief relief before shift change using form LOTO-RTU-01.
+
+Section 5 — Pressure / safety (PRV-03)
+5.1 Chilled-water riser PRV-03 maximum allowable working pressure (MAWP) is
+175 psig. Relief valve RV-CHW-03 shall be set to open at 185 psig and proof-tested
+per SE-44 annually.
+
+Section 6 — Record retention
+6.1 Signed commissioning checklists for air-handling units (AHUs) must be retained
+for not less than seven (7) years from the date the system is accepted, per the
+audit program ACX-9.
+
+Cross-reference note (contradiction check sample)
+Bulletin MB-2024-07 states filter media inspection intervals shall not exceed 90
+days for high-dust sites. SOP-HVAC-114 sets a default 180-day filter change for
+standard sites; sites classified "high-dust" in the facility registry must follow
+the stricter 90-day interval in MB-2024-07 (no conflict when classification applies).
+
+End of sample document — safe to delete after testing.

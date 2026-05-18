@@ -4,15 +4,18 @@ Light-themed Vite + React + TypeScript + Tailwind stack for the AuditShield Fast
 
 ## Run (development)
 
-1. Start the API on port **8101** (`uvicorn app.main:app --reload --port 8101` from the repo root).
-2. From this folder:
+1. Start the API on port **8101** (`uvicorn` from repo root — see `.\run-dev.ps1`).
+2. **Or (Windows)** from repo root run `.\run-all-dev.ps1` to open the API in a second window and start Vite here.
+3. From this folder:
 
 ```bash
 npm install
 npm run dev
 ```
 
-Vite proxies `/v1`, `/health`, `/docs`, and `/openapi.json` to `http://127.0.0.1:8101`.
+If the browser shows proxy **`ECONNREFUSED 127.0.0.1:8101`**, the API is not running — use step 1 or 2 first.
+
+Sample text for ingest is served at **`/samples/policy-warranty-sample.txt`**; the UI has **Load sample policy**, or pick **`samples/policy-warranty-sample.txt`** from the repo in the file dialog.
 
 ## Environment
 

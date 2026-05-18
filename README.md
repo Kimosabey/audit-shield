@@ -1,6 +1,6 @@
 # AuditShield
 
-**Corrective / audited RAG** — retrieval is followed by an **auditor-style gate** (stub scoring today): chunks get scores and **admit / reject** flags before synthesis. The API returns **steps**, **citations**, **request IDs**, and a **disclaimer** (output is **assistive only**, not a compliance guarantee).
+**Corrective / audited RAG** — retrieved chunks pass an **Ollama auditor** gate (JSON scores) with **pgvector** retrieval and **persisted** `query_run/chunk_audit` rows. The API returns **steps**, **citations**, **request IDs**, and a **disclaimer** (output is **assistive only**, not a compliance guarantee).
 
 | | |
 |--|--|
@@ -11,6 +11,18 @@
 | **Roadmap** | [docs/PLAN.md](docs/PLAN.md) |
 | **UI / UX rules** | [docs/UI.md](docs/UI.md) |
 | **Testing (manual)** | [docs/TESTING.md](docs/TESTING.md) |
+| **DB & DBeaver (suite)** | [../docs/DATABASE_AND_DBEAVER.md](../docs/DATABASE_AND_DBEAVER.md) |
+
+---
+
+## Database (Docker / DBeaver)
+
+**Postgres + pgvector** (compose in this repo maps host **`127.0.0.1:5433`** → container 5432). Default credentials: database `auditshield`, user `audit`, password `audit`.
+
+- **JDBC:** `jdbc:postgresql://127.0.0.1:5433/auditshield`
+- **Full table:** [DATABASE_AND_DBEAVER.md](../docs/DATABASE_AND_DBEAVER.md) (includes “start postgres only” command).
+
+Start stack: `docker compose up -d` from this repo (API + Postgres) or `docker compose up -d postgres` for DB only.
 
 ---
 
@@ -23,7 +35,9 @@ audit-shield/
 │   ├── run-uvicorn.ps1  # Windows: run API from app/ (sets PYTHONPATH)
 │   └── run-uvicorn.bat
 ├── run-dev.ps1          # Windows helper: uvicorn from repo root
+├── run-all-dev.ps1      # Windows: API in new window + Vite (use if proxy shows ECONNREFUSED 8101)
 ├── run-dev.bat
+├── samples/             # Sample .txt for ingest/upload tests — see samples/README.md
 ├── web/                 # SPA (Vite + React)
 │   ├── src/
 │   │   ├── pages/       # QueryPage — form, results, chunk cards, audit trail table
@@ -52,15 +66,18 @@ audit-shield/
 |--------|------|-------------|
 | `GET` | `/health` | JSON: `status`, `service`, `port` |
 | `GET` | `/` | JSON index when **no** `static/` (dev API-only); with `static/`, SPA is served at `/` |
-| `POST` | `/v1/query` | Body: `{ "query": string, "model"?: string, "temperature"?: number }` → full **QueryResponse**: `request_id`, `answer`, `citations[]`, `steps[]`, `chunks[]` (score, `admitted`, `source`), `models[]`, `disclaimer` |
-| `POST` | `/v1/query/stream` | **SSE** (`text/event-stream`): `data:` JSON lines — `event` values include `start`, `step`, `token` (optional), `done` with full result |
+| `POST` | `/v1/ingest/document` | JSON body: `{ "text", "title"?, "source_uri"? }` → chunk, embed, index |
+| `POST` | `/v1/ingest/upload` | `multipart/form-data` file (PDF or text) → same pipeline |
+| `POST` | `/v1/query` | Body: `{ "query": string, "model"?: string, "temperature"?: number }` → full **QueryResponse** from live index (or “no corpus” message if empty) |
+| `POST` | `/v1/query/stream` | **SSE** — events include `start`, `step`, `token`, `done` with full result |
 
-When `OLLAMA_BASE_URL` is set, synthesis (and stream path) can call Ollama **`/api/generate`** with the configured default or request `model`.
+Requires **`DATABASE_URL`** (Postgres + pgvector) and **`OLLAMA_BASE_URL`** for embeddings (`OLLAMA_EMBED_MODEL`), auditor (`OLLAMA_MODEL_AUDITOR`), and synthesis.
 
 ### Web UI (`web/`)
 
 - **Query** — textarea, optional model + temperature, submit via TanStack Query `mutation` → `POST /v1/query`.
 - **Result** — answer, citations, retrieval/auditor **steps**, **chunk cards** (admit/reject, score, source).
+- **Ingest** — paste text or upload PDF / `.txt`; optional **Load sample policy** (matches example queries: WDG-4401, LOTO, PRV-03, retention).
 - **Session audit trail** — table of `request_id`, UTC time, models (browser session only).
 - Header link to **OpenAPI** `/docs` (proxied in dev).
 
@@ -68,14 +85,21 @@ When `OLLAMA_BASE_URL` is set, synthesis (and stream path) can call Ollama **`/a
 
 ## Environment variables
 
-Copy [.env.example](.env.example) to `.env` for local API development (values are hints; adjust for your network).
+Copy [.env.example](.env.example) to **`.env`** in this repo root. Variables are loaded automatically on API startup (`app/database.py` uses `python-dotenv`). Shell exports still win if set.
 
 | Variable | Used by | Description |
 |----------|---------|-------------|
 | `PORT` | API | Listen port (default `8101`) |
-| `OLLAMA_BASE_URL` | API | Base URL, no trailing slash — e.g. `http://127.0.0.1:11434`. Empty = stub-only answers |
-| `AUDIT_DEFAULT_MODEL` | API | Model id when the client omits `model` (default `llama3.2`) |
-| `CORS_ORIGINS` | API | Comma-separated browser origins — default includes `http://localhost:5173` and `127.0.0.1:5173` |
+| `DATABASE_URL` | API | **Required** — `postgresql+asyncpg://…` to Postgres with **pgvector** extension |
+| `OLLAMA_BASE_URL` | API | **Required** — base URL, no trailing slash |
+| `OLLAMA_EMBED_MODEL` | API | Embeddings model (default `nomic-embed-text`) |
+| `OLLAMA_MODEL_AUDITOR` | API | Auditor chat model (default `phi:latest`) |
+| `AUDIT_DEFAULT_MODEL` | API | Synthesis model when the client omits `model` |
+| `AUDIT_TOP_K` | API | Vector retrieve count (default `8`) |
+| `AUDIT_ADMIT_THRESHOLD` | API | Min auditor score to admit (default `0.62`) |
+| `CORS_ORIGINS` | API | Comma-separated browser origins |
+
+Legacy note: **without** `DATABASE_URL`, query/ingest return **503** (no stub pipeline).
 
 **Web (`web/.env`, optional):**
 
@@ -95,6 +119,8 @@ python -m venv .venv
 # macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
 ```
+
+Start **Postgres with pgvector** (`docker compose up -d postgres` in this repo, or your own instance). Copy `.env.example` to `.env` and set **`DATABASE_URL`** and **`OLLAMA_BASE_URL`** before running the API.
 
 **Important:** the shell’s **current directory** must be **`audit-shield`** (the folder that **contains** `app/`, not `app` itself). If you `cd app` and run `uvicorn app.main:app` without fixing the path, you get `ModuleNotFoundError: No module named 'app'`.
 
