@@ -14,8 +14,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from pydantic import model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy import desc, select
+
 from app.database import DATABASE_URL, get_db, get_session_factory, init_db_schema
-from app.models import ChunkRow, DocumentRow
+from app.models import ChunkAuditRow, ChunkRow, DocumentRow, QueryRunRow
 from app.ollama_client import (
     OLLAMA_BASE_URL,
     OLLAMA_EMBED_MODEL,
@@ -34,6 +36,15 @@ STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
 _cors = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
 ALLOW_ORIGINS = [o.strip() for o in _cors.split(",") if o.strip()]
+# Accept any LAN/private IP origin on common dev ports so the UI also works
+# when reached via the machine's IP (e.g. http://192.168.1.20:5173). Override
+# with CORS_ORIGINS for stricter production setups.
+ALLOW_ORIGIN_REGEX = os.getenv(
+    "CORS_ORIGIN_REGEX",
+    r"^http://(localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|"
+    r"192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|"
+    r"\[::1\])(:\d+)?$",
+)
 
 
 @asynccontextmanager
@@ -56,6 +67,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOW_ORIGINS,
+    allow_origin_regex=ALLOW_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -212,6 +224,55 @@ async def query_v1(
         return await build_query_response(session, body)
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
+
+
+@app.get("/v1/audit-trail")
+async def audit_trail(
+    limit: int = 50,
+    session: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Export recent query runs with admitted/rejected chunk decisions for governance."""
+    if not DATABASE_URL:
+        raise HTTPException(status_code=503, detail="DATABASE_URL is not configured")
+    limit = max(1, min(int(limit or 50), 500))
+    stmt = (
+        select(QueryRunRow)
+        .order_by(desc(QueryRunRow.created_at))
+        .limit(limit)
+    )
+    runs = (await session.execute(stmt)).scalars().all()
+    out: list[dict[str, Any]] = []
+    for run in runs:
+        audit_rows = (
+            await session.execute(
+                select(ChunkAuditRow)
+                .where(ChunkAuditRow.run_id == run.id)
+                .order_by(ChunkAuditRow.rank.asc())
+            )
+        ).scalars().all()
+        out.append(
+            {
+                "request_id": run.request_id,
+                "query_text": run.query_text,
+                "synthesize_model": run.synthesize_model,
+                "auditor_model": run.auditor_model,
+                "embed_model": run.embed_model,
+                "created_at": run.created_at.isoformat() if run.created_at else None,
+                "admitted": sum(1 for a in audit_rows if a.admitted),
+                "rejected": sum(1 for a in audit_rows if not a.admitted),
+                "chunks": [
+                    {
+                        "chunk_id": str(a.chunk_id),
+                        "retrieval_score": a.retrieval_score,
+                        "auditor_score": a.auditor_score,
+                        "admitted": a.admitted,
+                        "rank": a.rank,
+                    }
+                    for a in audit_rows
+                ],
+            },
+        )
+    return {"count": len(out), "limit": limit, "runs": out}
 
 
 @app.post("/v1/query/stream")
