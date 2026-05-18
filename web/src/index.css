@@ -1,12 +1,101 @@
 @import "tailwindcss";
 
+/* === AuditShield — Compliance Ledger ===
+   Palette: deep navy (ink), parchment (paper), oxblood seal, gold-leaf accent.
+   Typography: Fraunces (display serif) + Inter (UI) + JetBrains Mono (IDs).
+   Motion: dignified ease-out + reduced-motion fully respected.
+*/
+
+@theme {
+  --color-ink: #0f1b3d;          /* navy ink */
+  --color-ink-soft: #1f2a4a;
+  --color-paper: #fbf7ee;        /* parchment */
+  --color-paper-deep: #f3ecda;
+  --color-seal: #7c1d1d;         /* oxblood seal */
+  --color-leaf: #b45309;         /* gold leaf */
+  --color-rule: #c9b894;         /* warm rule line */
+  --color-admit: #15803d;        /* admitted */
+  --color-reject: #7c1d1d;       /* rejected */
+}
+
+:root {
+  color-scheme: light only;
+  --paper-grain: radial-gradient(circle at 20% 10%, rgba(180, 83, 9, 0.05), transparent 60%),
+                 radial-gradient(circle at 80% 90%, rgba(15, 27, 61, 0.05), transparent 55%);
+}
+
 @layer base {
   html {
-    @apply antialiased text-zinc-900;
+    @apply antialiased;
     font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
-    font-feature-settings: 'tnum' on, 'lnum' on;
+    font-feature-settings: 'tnum' on, 'lnum' on, 'ss01' on;
+    color: var(--color-ink);
   }
   body {
-    @apply min-h-screen bg-zinc-50;
+    @apply min-h-screen;
+    background-color: var(--color-paper);
+    background-image: var(--paper-grain);
+  }
+  h1, h2, .ledger-display {
+    font-family: 'Fraunces', 'Inter', ui-serif, Georgia, serif;
+    font-variation-settings: 'opsz' 96, 'SOFT' 30;
+    letter-spacing: -0.01em;
+  }
+  code, kbd, .mono {
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-ink);
+    outline-offset: 3px;
+    border-radius: 6px;
+  }
+}
+
+/* Skip-to-main link (WCAG 2.1 SC 2.4.1) */
+.skip-link {
+  position: absolute;
+  left: 0.5rem;
+  top: -3rem;
+  z-index: 100;
+  background: var(--color-ink);
+  color: var(--color-paper);
+  padding: 0.5rem 0.875rem;
+  border-radius: 0.5rem;
+  font-weight: 600;
+  transition: top 160ms ease-out;
+}
+.skip-link:focus {
+  top: 0.5rem;
+}
+
+/* Wax seal animation — gentle rotate on mount; respects reduced motion */
+@keyframes seal-press {
+  0% { transform: scale(0.6) rotate(-12deg); opacity: 0; }
+  60% { transform: scale(1.08) rotate(2deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0); opacity: 1; }
+}
+.seal-press { animation: seal-press 600ms cubic-bezier(0.34, 1.4, 0.64, 1) both; }
+
+/* Ledger rule (decorative horizontal divider) */
+.ledger-rule {
+  background-image: linear-gradient(to right,
+    transparent, var(--color-rule) 18%, var(--color-rule) 82%, transparent);
+  height: 1px;
+}
+
+/* Ledger paper card */
+.paper-card {
+  background-color: #fffdf6;
+  border: 1px solid var(--color-rule);
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 0 rgba(124, 29, 29, 0.04), 0 8px 24px -16px rgba(15, 27, 61, 0.18);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
   }
 }

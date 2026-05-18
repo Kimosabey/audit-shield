@@ -259,17 +259,22 @@ export function QueryPage() {
   return (
     <div className="relative min-h-screen">
       <GridBackground />
-      <header className="border-b border-zinc-200/80 bg-white/80 backdrop-blur-md">
+      <header
+        className="border-b border-[var(--color-rule)] bg-[#fffdf6]/85 backdrop-blur-md"
+        role="banner"
+      >
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-4">
           <div className="flex items-center gap-3">
-            <div className="flex size-10 items-center justify-center rounded-xl bg-blue-600 text-white shadow-sm">
+            <div className="flex size-11 items-center justify-center rounded-xl bg-[var(--color-ink)] text-[var(--color-paper)] shadow-sm seal-press">
               <Shield className="size-5" aria-hidden />
             </div>
             <div>
-              <p className="text-xs font-medium uppercase tracking-wider text-zinc-500">
-                SelfAware®
+              <p className="mono text-[10px] font-bold uppercase tracking-[0.22em] text-[var(--color-leaf)]">
+                SelfAware® · Ledger I
               </p>
-              <h1 className="text-lg font-semibold text-zinc-900">AuditShield</h1>
+              <h1 className="ledger-display text-xl font-semibold text-[var(--color-ink)]">
+                AuditShield
+              </h1>
             </div>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
@@ -312,20 +317,24 @@ export function QueryPage() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl space-y-10 px-4 py-10">
-        <SpotlightHero className="border border-zinc-200/80 bg-white/90 p-6 shadow-sm md:p-8">
-          <div className="space-y-2">
+      <main
+        id="main"
+        className="mx-auto max-w-5xl space-y-10 px-4 py-10"
+        role="main"
+      >
+        <SpotlightHero className="p-6 md:p-9">
+          <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="info">Light console</Badge>
+              <Badge variant="info">Compliance-grade audit trail</Badge>
               <Badge variant="warning">Assistive output</Badge>
             </div>
-            <h2 className="text-2xl font-semibold tracking-tight text-zinc-900 md:text-3xl">
+            <h2 className="ledger-display text-3xl font-semibold tracking-tight text-[var(--color-ink)] md:text-4xl">
               Corrective RAG with auditor scoring
             </h2>
-            <p className="max-w-2xl text-sm leading-relaxed text-zinc-600">
-              Responses include retrieval steps, chunk admission decisions, and
-              citations. They are not a compliance guarantee — validate against
-              your policy and source documents.
+            <p className="max-w-2xl text-sm leading-relaxed text-[var(--color-ink-soft)]">
+              Every response includes retrieval steps, chunk admission decisions,
+              and citations — sealed into the ledger for later inspection. Not
+              a compliance guarantee; validate against policy and source documents.
             </p>
           </div>
         </SpotlightHero>
