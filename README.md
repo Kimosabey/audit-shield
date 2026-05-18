@@ -146,6 +146,8 @@ If you are accidentally inside `app/`, run `cd ..` first, then the command above
 
 - Swagger: [http://127.0.0.1:8101/docs](http://127.0.0.1:8101/docs)
 
+**Other devices (LAN / Tailscale):** Uvicorn uses `--host 0.0.0.0`, so after `ipconfig` you can use `http://<your-IPv4>:8101/docs` from another machine (allow the port in Windows Firewall if needed). Full notes: [LOCAL_AND_NETWORK_ACCESS.md](../docs/LOCAL_AND_NETWORK_ACCESS.md).
+
 ### 2. Web UI (second terminal)
 
 ```bash
@@ -155,6 +157,8 @@ npm run dev
 ```
 
 Vite proxies `/v1`, `/health`, `/docs`, `/openapi.json`, `/redoc` to `http://127.0.0.1:8101`. Open the printed URL (usually port **5173**).
+
+From **another device**, use the **Network** URL from `npm run dev` or `http://<your-PC-IPv4>:5173` (see [LOCAL_AND_NETWORK_ACCESS.md](../docs/LOCAL_AND_NETWORK_ACCESS.md)).
 
 ### 3. Production-style front-end build (optional, without Docker)
 

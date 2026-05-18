@@ -8,4 +8,5 @@ if not exist "%~dp0main.py" (
 )
 if not defined PORT set PORT=8101
 echo PYTHONPATH=%PYTHONPATH%
+if exist "%~dp0..\..\scripts\print-share-urls.ps1" powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0..\..\scripts\print-share-urls.ps1" -Port %PORT%
 python -m uvicorn app.main:app --reload --host 0.0.0.0 --port %PORT%

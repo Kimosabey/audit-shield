@@ -11,6 +11,7 @@ export default defineConfig({
     alias: { '@': path.resolve(__dirname, './src') },
   },
   server: {
+    host: true,
     proxy: {
       '/v1': { target: 'http://127.0.0.1:8101', changeOrigin: true },
       '/health': { target: 'http://127.0.0.1:8101', changeOrigin: true },

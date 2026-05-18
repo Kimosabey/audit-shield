@@ -15,6 +15,8 @@ npm run dev
 
 If the browser shows proxy **`ECONNREFUSED 127.0.0.1:8101`**, the API is not running — use step 1 or 2 first.
 
+**Phone / other PC on your network:** `npm run dev` listens on the LAN (Vite `host: true`); use the **Network** URL Vite prints or `http://<your-IPv4>:5173`. See [LOCAL_AND_NETWORK_ACCESS.md](../../docs/LOCAL_AND_NETWORK_ACCESS.md).
+
 Sample text for ingest is served at **`/samples/policy-warranty-sample.txt`**; the UI has **Load sample policy**, or pick **`samples/policy-warranty-sample.txt`** from the repo in the file dialog.
 
 ## Environment
