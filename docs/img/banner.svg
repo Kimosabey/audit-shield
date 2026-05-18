@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 320" role="img" aria-label="AuditShield — Compliance Ledger">
+  <defs>
+    <linearGradient id="paper" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%" stop-color="#fbf7ee"/>
+      <stop offset="100%" stop-color="#f3ecda"/>
+    </linearGradient>
+    <radialGradient id="seal" cx="30%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#a52a2a"/>
+      <stop offset="60%" stop-color="#7c1d1d"/>
+      <stop offset="100%" stop-color="#4c0a0a"/>
+    </radialGradient>
+    <pattern id="vellum" width="80" height="80" patternUnits="userSpaceOnUse">
+      <path d="M0 22 L80 22" stroke="rgba(15,27,61,0.05)" stroke-width="1"/>
+      <path d="M60 0 L60 80" stroke="rgba(180,83,9,0.05)" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <!-- Parchment -->
+  <rect width="1200" height="320" fill="url(#paper)"/>
+  <rect width="1200" height="320" fill="url(#vellum)" opacity="0.7"/>
+  <!-- Gold-leaf top rule -->
+  <rect x="40" y="34" width="1120" height="2" fill="#b45309" opacity="0.6"/>
+  <rect x="40" y="40" width="800" height="1" fill="#b45309" opacity="0.35"/>
+  <!-- Watermark crest -->
+  <g transform="translate(900 180)" opacity="0.10">
+    <circle r="120" fill="none" stroke="#0f1b3d" stroke-width="2"/>
+    <circle r="98"  fill="none" stroke="#0f1b3d" stroke-width="0.7"/>
+    <path d="M0 -94 L23 -34 L88 -27 L37 12 L52 73 L0 38 L-52 73 L-37 12 L-88 -27 L-23 -34 Z" fill="none" stroke="#7c1d1d" stroke-width="1.6"/>
+  </g>
+  <!-- Wax seal -->
+  <g transform="translate(155 165) rotate(-8)">
+    <circle r="74" fill="url(#seal)"/>
+    <circle r="58" fill="none" stroke="#fbf7ee" stroke-width="2" opacity="0.7"/>
+    <text x="0" y="-6" text-anchor="middle" font-family="Fraunces,serif" font-weight="800" fill="#fbf7ee" font-size="22" letter-spacing="3">VERITAS</text>
+    <text x="0" y="20" text-anchor="middle" font-family="Fraunces,serif" font-weight="600" fill="#fbf7ee" font-size="12" letter-spacing="5">OFFICIO</text>
+  </g>
+  <!-- Brand -->
+  <g transform="translate(270 110)">
+    <text font-family="JetBrains Mono,monospace" font-size="13" font-weight="800" fill="#b45309" letter-spacing="6">SELFAWARE — LEDGER I</text>
+    <text y="74" font-family="Fraunces,serif" font-size="78" font-weight="700" fill="#0f1b3d" letter-spacing="-1.5">AuditShield</text>
+    <text y="120" font-family="Inter,sans-serif" font-size="22" fill="#1f2a4a">Corrective RAG with auditor scoring + sealed audit trail</text>
+    <text y="156" font-family="JetBrains Mono,monospace" font-size="14" fill="#7c1d1d" letter-spacing="2">:8101  ·  pgvector + Ollama  ·  WCAG-AA</text>
+  </g>
+  <!-- Bottom embossed rule -->
+  <rect x="40" y="284" width="1120" height="2" fill="#b45309" opacity="0.6"/>
+  <rect x="40" y="290" width="600" height="1" fill="#0f1b3d" opacity="0.18"/>
+</svg>

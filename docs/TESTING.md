@@ -78,6 +78,24 @@ curl -sSN -X POST "$BASE/v1/query/stream" \
 
 ---
 
+## 3a. API — `GET /v1/audit-trail`  (new)
+
+| ID | Case | Steps | Expected |
+|----|------|--------|----------|
+| API-AT0 | No database | `DATABASE_URL` unset → `GET $BASE/v1/audit-trail` | `503` |
+| API-AT1 | Empty | Fresh DB, no runs | `200`; `{ count: 0, limit, runs: [] }` |
+| API-AT2 | After runs | Run a few `POST /v1/query`, then `GET /v1/audit-trail?limit=5` | `200`; up to 5 runs, each with `admitted`/`rejected` counts and a `chunks` array sorted by `rank` |
+| API-AT3 | Limit clamp | `?limit=9999` | `200`; effective `limit=500` |
+| API-AT4 | Limit lower | `?limit=0` | `200`; effective `limit=1` |
+
+Example:
+
+```bash
+curl -sS "$BASE/v1/audit-trail?limit=10" | jq '.count, .runs[0].request_id'
+```
+
+---
+
 ## 4. API — docs & CORS (smoke)
 
 | ID | Case | Expected |

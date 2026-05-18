@@ -1,6 +1,31 @@
-# AuditShield
+<p align="center">
+  <img src="docs/img/banner.svg" alt="AuditShield — Compliance Ledger" width="100%" />
+</p>
 
-**Corrective / audited RAG** — retrieved chunks pass an **Ollama auditor** gate (JSON scores) with **pgvector** retrieval and **persisted** `query_run/chunk_audit` rows. The API returns **steps**, **citations**, **request IDs**, and a **disclaimer** (output is **assistive only**, not a compliance guarantee).
+# AuditShield · Compliance Ledger
+
+> **Corrective / audited RAG** — retrieved chunks pass an **Ollama auditor** gate (JSON scores) with **pgvector** retrieval and **persisted** `query_run / chunk_audit` rows. The API returns **steps**, **citations**, **request IDs**, and a **disclaimer** (output is **assistive only**, not a compliance guarantee).
+
+| Spec | Value |
+|---|---|
+| **Theme** | Compliance Ledger — parchment, navy ink, oxblood wax seal, gold-leaf rule |
+| **Port** | `:8101` |
+| **Stack** | FastAPI · Postgres + pgvector · Ollama · Vite 6 · React 19 · Tailwind 4 |
+| **Status** | Backend M3 complete; UI polished; LAN-IP CORS enabled |
+
+### Quick links
+[API.md](docs/API.md) · [ARCHITECTURE.md](docs/ARCHITECTURE.md) · [PLAN.md](docs/PLAN.md) · [TESTING.md](docs/TESTING.md) · [UI.md](docs/UI.md) · [CHANGELOG.md](docs/CHANGELOG.md) · [SCREENSHOTS.md](docs/SCREENSHOTS.md) · [Suite — Ports & URLs](../docs/PORTS_AND_URLS.md)
+
+### Open these to test
+
+| What | Localhost | LAN |
+|---|---|---|
+| Swagger | http://127.0.0.1:8101/docs | http://&lt;LAN_IP&gt;:8101/docs |
+| Health | http://127.0.0.1:8101/health | http://&lt;LAN_IP&gt;:8101/health |
+| Audit ledger export | http://127.0.0.1:8101/v1/audit-trail?limit=50 | http://&lt;LAN_IP&gt;:8101/v1/audit-trail?limit=50 |
+| UI | http://localhost:5173 | http://&lt;LAN_IP&gt;:5173 |
+
+
 
 | | |
 |--|--|
@@ -70,6 +95,7 @@ audit-shield/
 | `POST` | `/v1/ingest/upload` | `multipart/form-data` file (PDF or text) → same pipeline |
 | `POST` | `/v1/query` | Body: `{ "query": string, "model"?: string, "temperature"?: number }` → full **QueryResponse** from live index (or “no corpus” message if empty) |
 | `POST` | `/v1/query/stream` | **SSE** — events include `start`, `step`, `token`, `done` with full result |
+| `GET` | `/v1/audit-trail` | **NEW** — export recent runs + per-chunk admit/reject decisions for governance |
 
 Requires **`DATABASE_URL`** (Postgres + pgvector) and **`OLLAMA_BASE_URL`** for embeddings (`OLLAMA_EMBED_MODEL`), auditor (`OLLAMA_MODEL_AUDITOR`), and synthesis.
 
