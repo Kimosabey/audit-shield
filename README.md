@@ -2,8 +2,8 @@
 
 Corrective / audited RAG — fast model gates retrieved chunks before synthesis.
 
-**GitHub:** `Kimosabey/selfaware-audit-shield` — after [`gh auth login`](https://cli.github.com/manual/gh_auth_login), from this folder:
+**GitHub:** [Kimosabey/audit-shield](https://github.com/Kimosabey/audit-shield) — clone with SSH:
 
-`gh repo create Kimosabey/selfaware-audit-shield --private --source=. --remote=origin --push`
+`git clone git@github.com:Kimosabey/audit-shield.git`
 
 Planned API port: **8101**.
