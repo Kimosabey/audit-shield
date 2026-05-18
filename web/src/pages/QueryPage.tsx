@@ -98,34 +98,35 @@ const AUDIT_EXAMPLES: {
   temperature?: number
 }[] = [
   {
-    label: 'Warranty + part',
+    label: 'Chiller LOTO',
     query:
-      'Summarize warranty obligations for part WDG-4401 and cite the controlling section and chunk IDs.',
+      'What are the lockout/tagout steps before servicing CH-0001b00000 or CH-0002b00000? Cite the controlling SOP section and chunk IDs.',
     temperature: 0.2,
   },
   {
-    label: 'Lockout/tagout',
+    label: 'Condenser pump overhaul',
     query:
-      'What steps are required for lockout/tagout on packaged RTU units per our maintenance policy?',
+      'List the preventive maintenance intervals and bearing replacement schedule for CONDPU-0001b40000, CONDPU-0002b40000, and CONDPU-0003b40000.',
   },
   {
-    label: 'Pressure / safety',
+    label: 'Cooling tower water treatment',
     query:
-      'List maximum allowable working pressure and relief valve setpoints for chilled-water riser PRV-03; cite policy language.',
+      'What are the Legionella control and chemical dosing requirements for CT-0001b70000 and CT-0002b70000 under our water management plan?',
   },
   {
-    label: 'Record retention',
+    label: 'Energy meter calibration',
     query:
-      'How long must signed commissioning checklists for AHUs be retained under our audit program?',
+      'What is the required calibration interval for energy meters EM-0001000000 through EM-000c000000, and who must sign off on the records?',
   },
   {
-    label: 'Contradiction check',
+    label: 'Chiller pressure safety',
     query:
-      'Does bulletin MB-2024-07 conflict with SOP-HVAC-114 on filter change intervals? Cite admitted chunks only.',
+      'List maximum allowable working pressures and high-pressure cutout setpoints for CH-0001b00000 and CH-0002b00000; cite admitted chunks only.',
   },
   {
-    label: 'Term definition',
-    query: 'Define “corrective maintenance” as used in section 4.2 of policy_master_v3.',
+    label: 'Make-up water permit',
+    query:
+      'What permit and record retention requirements apply to MWP-0001150000 and MWP-0002150000 under our facility compliance programme?',
   },
 ]
 
