@@ -1,0 +1,69 @@
+Unicharm HVAC Plant — Equipment Technical Reference
+====================================================
+
+CH-0001b00000 (Chiller 1) — Carrier 30XA Series
+  Rated capacity: 500 TR at ARI conditions (12/7°C CHW, 30/35°C CW)
+  Refrigerant: R-134a, charge 280 kg
+  High pressure cutout setpoint: 18 bar (factory set, field-adjustable 14-20 bar)
+  Low pressure cutout: 3.5 bar
+  Oil type: Carrier Chiller Oil 2 (POE)
+  VFD on compressor drive: Carrier Drive VDC-500, fault code F001 = phase loss
+  Fault code F012 = high condenser pressure trip; check CT approach temperature
+  Recommended DeltaP across evaporator: 40-60 kPa
+
+CH-0002b00000 (Chiller 2) — Identical spec to CH-0001b00000
+
+CONDPU-0001b40000 / CONDPU-0002b40000 (Condenser Pump 1 & 2 — Bell & Gossett e-1510)
+  Rated flow: 320 m3/h at 20 m head
+  Motor: 30 kW, 415V 3-phase, Grundfos MGE-P 132S
+  Bearing lubrication: Shell Tellus Oil 46, interval 2000 run-hours
+  Vibration alarm limit: 7.1 mm/s RMS (ISO 10816-3 Group 2)
+  Mechanical seal: John Crane Type 21, replacement interval 40,000 hours or 5 years
+
+CONDPU-0003b40000 (Condenser Pump 3 — standby)
+  Same spec as CONDPU-0001b40000; standby rotation every 30 days per SOP-PUMP-007
+
+CT-0001b70000 / CT-0002b70000 (Cooling Tower — Baltimore Aircoil VTL-500)
+  Design approach: 4°C (WBT 27°C, inlet 37°C, outlet 32°C)
+  Legionella risk control: Cl2 dosing 0.5-1.0 ppm free chlorine, monthly sampling per L8
+  Basin cleaning interval: 6 months; basin heater setpoint 7°C (anti-freeze)
+  Fan motor: 22 kW, 6-pole, VFD-controlled via BTM-0001110000
+  Make-up water consumption: approx 2% of circulated volume per hour (evaporation)
+
+PV-0001b20000 (Primary Pump 1 — Grundfos TPE3 80-240)
+  Rated flow: 180 m3/h; head: 35 m; motor: 22 kW
+  Min diff pressure setpoint: 80 kPa (BMS-controlled via frequency drive)
+  Cavitation symptom: noise onset below 60 kPa differential; check strainer
+  Run-hours logged by BTM-0001110000; PM due at 8,000 hours
+
+BTM-0001110000 (Building Telemetry Module — Graylinx Edge Controller GL-400)
+  8 AI, 4 AO, 16 DI, 8 DO; Modbus RTU + BACnet IP
+  Data retention: 30 days local ring buffer (one_month_data table); sync to cloud daily
+  Alarm types: GL_EVENT_CRITICALITY_LOW / MEDIUM / HIGH (gl_alarm table)
+
+MWP-0001150000 / MWP-0002150000 (Make-up Water Pumps — Grundfos CM5-7)
+  Rated flow: 5 m3/h; head: 40 m; motor: 0.75 kW
+  Auto-start triggered by CT basin level below 60% via BTM float switch
+
+EM-0001000000 through EM-000c000000 (Energy Meters — Schneider iEM3155)
+  Pulse output: 1 pulse = 1 kWh (wiring per EM-WIRING-DWG-001 rev 3)
+  Calibration interval: 4 years; last calibration batch: 2024-01; next due: 2028-01
+  Data logged to gl_metric table via BTM Modbus poll
+
+Section 6 — Lockout / Tagout (Unicharm site procedure USP-LOTO-001)
+  All isolations on CH, CONDPU, CT, PV and MWP shall follow USP-LOTO-001.
+  Steps: (a) notify plant supervisor, (b) isolate VFD and MCB,
+         (c) lock isolator with personal padlock, tag "OUT OF SERVICE — [name/date]",
+         (d) verify zero volts at motor terminals,
+         (e) bleed hydraulic pressure before breaking connections (PTW-HYDRAULIC form).
+  Re-energisation requires two-person verification and PTW countersign.
+
+Section 7 — Alarm and event management
+  All gl_alarm entries with criticality HIGH must be acknowledged within 15 minutes.
+  Unacknowledged alarms trigger SMS to on-call via BTM-0001110000.
+  Root-cause entries in technician_feedback column required for restore closure.
+
+Section 8 — Record retention
+  Commissioning checklists, LOTO logs, PTW forms: 7 years per Unicharm RM-POLICY-004.
+  Energy meter calibration certificates: 10 years.
+  Cooling tower Legionella sampling results: 5 years.

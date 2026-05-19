@@ -1,5 +1,10 @@
 # AuditShield — testing checklist
 
+> Full suite-level E2E guide (including cross-project narrative): [docs/E2E_TESTING.md](../../docs/E2E_TESTING.md)  
+> Sample document for ingest: `samples/unicharm_hvac_sample.txt` (Unicharm HVAC equipment specs — CH, CONDPU, CT, PV, BTM, MWP, EM)
+
+---
+
 Manual cases for the **FastAPI** service (`app/main.py`) and the **Vite** UI (`web/`). Mark items as you run them.
 
 **Prerequisites**
@@ -141,3 +146,56 @@ curl -sS "$BASE/v1/audit-trail?limit=10" | jq '.count, .runs[0].request_id'
 ## Future automation
 
 There is no `pytest` suite in-tree yet. Good next steps: `httpx.AsyncClient` tests against `app.main.app` with `TestClient`, plus Playwright or Cypress for UI-Q*.
+
+---
+
+## 8. Unicharm E2E scenario (with sample document)
+
+**Purpose:** Verify the full corrective-RAG pipeline using real Unicharm HVAC asset data.
+
+**Sample file:** `samples/unicharm_hvac_sample.txt`  
+Contains: CH-0001b00000 specs, CONDPU bearing intervals, CT water treatment, PV cavitation notes, BTM config, EM calibration, LOTO procedure USP-LOTO-001.
+
+### 8a. Ingest
+
+| ID | Action | Expected |
+|----|--------|----------|
+| E2E-A1 | Upload `samples/unicharm_hvac_sample.txt` via UI or curl | `chunks_indexed >= 8`; toast success |
+| E2E-A2 | Check `/v1/audit-trail` | 0 query runs (no queries yet) |
+
+```bash
+curl -X POST http://127.0.0.1:8101/v1/ingest/upload \
+  -F "file=@samples/unicharm_hvac_sample.txt" \
+  -F "title=unicharm_hvac_ref" \
+  -F "source_uri=samples://unicharm_hvac_sample.txt"
+```
+
+### 8b. Queries — Unicharm chip set
+
+| ID | Chip | Key expected content |
+|----|------|---------------------|
+| E2E-B1 | Chiller LOTO | Steps a–e from USP-LOTO-001; PTW-HYDRAULIC form cited |
+| E2E-B2 | Condenser pump overhaul | 2000-hour bearing interval; John Crane Type 21 seal |
+| E2E-B3 | Cooling tower water treatment | Cl2 0.5-1.0 ppm; 6-month basin cleaning; Legionella L8 |
+| E2E-B4 | Energy meter calibration | 4-year interval; next due 2028-01 |
+| E2E-B5 | Chiller pressure safety | 18 bar high-pressure cutout; F012 = high condenser pressure |
+| E2E-B6 | Make-up water permit | MWP auto-start; PTW-HYDRAULIC form; 7-year retention |
+
+### 8c. Audit trail export
+
+```bash
+curl "http://127.0.0.1:8101/v1/audit-trail?limit=10"
+```
+
+Each run should show `admitted >= 1` if the relevant chunk was admitted.  
+If `admitted: 0` on all runs, the auditor model (`phi:latest`) may be rejecting chunks — check `auditor_score` values in the response.
+
+### 8d. Ollama models used
+
+| Role | Model | Env var |
+|------|-------|---------|
+| Embed | `nomic-embed-text` | `OLLAMA_EMBED_MODEL` |
+| Auditor | `phi:latest` | `OLLAMA_MODEL_AUDITOR` |
+| Synthesis | `qwen2.5:14b` (default) | `AUDIT_DEFAULT_MODEL` |
+
+Server: `http://100.125.103.28:11434` (GLSERVERLLM via Tailscale)
