@@ -6,10 +6,9 @@ import {
   ClipboardCheck,
   Database,
   ExternalLink,
-  FileText,
   Loader2,
   Shield,
-  Upload,
+  UploadCloud,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
@@ -31,7 +30,6 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import {
   getHealth,
-  postIngestDocument,
   postIngestUpload,
   postQuery,
   type QueryResponse,
@@ -130,16 +128,10 @@ const AUDIT_EXAMPLES: {
   },
 ]
 
-const ingestSchema = z.object({
+const uploadSchema = z.object({
   title: z.string().optional(),
-  sourceUri: z.string().optional(),
-  text: z
-    .string()
-    .transform((t) => t.trim())
-    .pipe(z.string().min(1, 'Paste or type document text to index.')),
 })
-
-type IngestFormValues = z.infer<typeof ingestSchema>
+type UploadFormValues = z.infer<typeof uploadSchema>
 
 export function QueryPage() {
   const [result, setResult] = useState<QueryResponse | null>(null)
@@ -160,34 +152,23 @@ export function QueryPage() {
 
   const modelChoice = form.watch('modelChoice')
 
-  const ingestForm = useForm<IngestFormValues>({
-    resolver: zodResolver(ingestSchema),
-    defaultValues: { title: '', sourceUri: '', text: '' },
-  })
-
-  const ingestMutation = useMutation({
-    mutationFn: postIngestDocument,
-    onSuccess: (data) => {
-      toast.success('Document indexed', {
-        description: `${data.chunks_indexed} chunks — ${data.title}`,
-      })
-      ingestForm.reset({ title: '', sourceUri: '', text: '' })
-    },
-    onError: (e: Error) => toast.error('Ingest failed', { description: e.message }),
+  const uploadForm = useForm<UploadFormValues>({
+    defaultValues: { title: '' },
   })
 
   const uploadIngestMutation = useMutation({
-    mutationFn: (args: { file: File; title?: string; source_uri?: string }) =>
-      postIngestUpload(args.file, { title: args.title, source_uri: args.source_uri }),
+    mutationFn: (args: { file: File; title?: string }) =>
+      postIngestUpload(args.file, { title: args.title }),
     onSuccess: (data) => {
       toast.success('File indexed', {
         description: `${data.chunks_indexed} chunks — ${data.title}`,
       })
       setUploadFile(null)
+      uploadForm.reset()
       const el = document.getElementById('ingest-file') as HTMLInputElement | null
       if (el) el.value = ''
     },
-    onError: (e: Error) => toast.error('Upload ingest failed', { description: e.message }),
+    onError: (e: Error) => toast.error('Ingest failed', { description: e.message }),
   })
 
   const mutation = useMutation({
@@ -220,41 +201,13 @@ export function QueryPage() {
     })
   }
 
-  function onIngestSubmit(values: IngestFormValues) {
-    ingestMutation.mutate({
-      text: values.text,
-      title: values.title?.trim() || undefined,
-      source_uri: values.sourceUri?.trim() || undefined,
-    })
-  }
-
   function onUploadIngest() {
     if (!uploadFile) {
-      toast.error('Choose a file', { description: 'Select a PDF or plain-text file to index.' })
+      toast.error('Choose a file', { description: 'Select a PDF or .txt file to index.' })
       return
     }
-    const { title, sourceUri } = ingestForm.getValues()
-    uploadIngestMutation.mutate({
-      file: uploadFile,
-      title: title?.trim() || undefined,
-      source_uri: sourceUri?.trim() || undefined,
-    })
-  }
-
-  async function loadSamplePolicyText() {
-    try {
-      const r = await fetch('/samples/policy-warranty-sample.txt')
-      if (!r.ok) throw new Error(r.statusText || String(r.status))
-      const txt = await r.text()
-      ingestForm.setValue('text', txt)
-      ingestForm.setValue('title', 'policy_aw_2024_sample')
-      ingestForm.setValue('sourceUri', 'sample://policy-warranty-sample.txt')
-      toast.success('Sample policy loaded', {
-        description: 'Run Ingest pasted text, or save as .txt and use Upload.',
-      })
-    } catch (e) {
-      toast.error('Could not load sample', { description: (e as Error).message })
-    }
+    const { title } = uploadForm.getValues()
+    uploadIngestMutation.mutate({ file: uploadFile, title: title?.trim() || undefined })
   }
 
   return (
@@ -344,129 +297,53 @@ export function QueryPage() {
           <Card className="border-0 shadow-none">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Upload className="size-5 text-emerald-600" aria-hidden />
-                Index documents
+                <UploadCloud className="size-5 text-emerald-600" aria-hidden />
+                Index a document
               </CardTitle>
               <CardDescription>
-                Paste text or upload a PDF / plain-text file. Text is chunked, embedded via Ollama, and stored in
-                Postgres. Requires{' '}
-                <code className="rounded bg-zinc-100 px-1 text-xs">OLLAMA_BASE_URL</code> and your embed model (e.g.{' '}
-                <code className="rounded bg-zinc-100 px-1 text-xs">nomic-embed-text</code>).
+                Upload a <strong>PDF</strong> or <strong>.txt</strong> file — chunked, embedded via{' '}
+                <code className="rounded bg-zinc-100 px-1 text-xs">nomic-embed-text</code>, and stored in Postgres.
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-8">
-              <form
-                className="space-y-4"
-                onSubmit={ingestForm.handleSubmit(onIngestSubmit)}
-                noValidate
-              >
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-                  <p className="text-sm font-medium text-zinc-800">Paste text</p>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 shrink-0 text-xs text-zinc-600"
-                    disabled={ingestMutation.isPending || uploadIngestMutation.isPending}
-                    onClick={() => void loadSamplePolicyText()}
-                  >
-                    <FileText className="size-4" aria-hidden />
-                    Load sample policy
-                  </Button>
-                </div>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="ingest-title">Title (optional)</Label>
-                    <Input
-                      id="ingest-title"
-                      placeholder="e.g. warranty_bulletin_v3"
-                      {...ingestForm.register('title')}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="ingest-source">Source URI (optional)</Label>
-                    <Input
-                      id="ingest-source"
-                      placeholder="e.g. file://policies/aw-2024.pdf"
-                      {...ingestForm.register('sourceUri')}
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="ingest-text">Document text</Label>
-                  <Textarea
-                    id="ingest-text"
-                    placeholder="Paste policy text, SOP excerpts, or other source material to search later."
-                    className="min-h-[140px]"
-                    {...ingestForm.register('text')}
-                  />
-                  {ingestForm.formState.errors.text?.message ? (
-                    <p className="text-sm text-red-600">
-                      {ingestForm.formState.errors.text.message}
-                    </p>
-                  ) : null}
-                </div>
-                <Button
-                  type="submit"
-                  variant="outline"
-                  disabled={ingestMutation.isPending || uploadIngestMutation.isPending}
-                >
-                  {ingestMutation.isPending ? (
-                    <>
-                      <Loader2 className="size-4 animate-spin" />
-                      Embedding &amp; saving…
-                    </>
-                  ) : (
-                    <>
-                      <Upload className="size-4" />
-                      Ingest pasted text
-                    </>
-                  )}
-                </Button>
-              </form>
-
-              <div className="relative" aria-hidden>
-                <div className="absolute inset-0 flex items-center">
-                  <span className="w-full border-t border-zinc-200" />
-                </div>
-                <div className="relative flex justify-center text-xs font-medium uppercase tracking-wider">
-                  <span className="bg-white px-3 text-zinc-500">Or upload</span>
-                </div>
-              </div>
-
+            <CardContent>
               <div className="space-y-4">
-                <p className="text-sm font-medium text-zinc-800">PDF or plain text file</p>
+                <div className="space-y-2">
+                  <Label htmlFor="ingest-title">Title <span className="text-zinc-400">(optional — defaults to filename)</span></Label>
+                  <Input
+                    id="ingest-title"
+                    placeholder="e.g. unicharm_hvac_ref"
+                    {...uploadForm.register('title')}
+                  />
+                </div>
                 <div className="space-y-2">
                   <Label htmlFor="ingest-file">File</Label>
                   <Input
                     id="ingest-file"
                     type="file"
                     accept=".pdf,application/pdf,.txt,text/plain"
-                    disabled={ingestMutation.isPending || uploadIngestMutation.isPending}
+                    disabled={uploadIngestMutation.isPending}
                     onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
+                    aria-describedby="ingest-file-hint"
                   />
-                  <p className="text-xs leading-relaxed text-zinc-500">
-                    Optional title and source above apply to uploads too. If title is empty, the server uses the file
-                    name. For a ready-made <code className="rounded bg-zinc-100 px-1">.txt</code>, use{' '}
-                    <code className="break-all rounded bg-zinc-100 px-1">samples/policy-warranty-sample.txt</code> in
-                    this repo (same text as <strong>Load sample policy</strong>).
+                  <p id="ingest-file-hint" className="text-xs text-zinc-500">
+                    PDF or plain text · max server default · filename used as title if left blank above
                   </p>
                 </div>
                 <Button
                   type="button"
-                  variant="outline"
-                  disabled={ingestMutation.isPending || uploadIngestMutation.isPending}
                   onClick={onUploadIngest}
+                  disabled={uploadIngestMutation.isPending || !uploadFile}
+                  className="w-full sm:w-auto"
                 >
                   {uploadIngestMutation.isPending ? (
                     <>
-                      <Loader2 className="size-4 animate-spin" />
-                      Extracting, embedding…
+                      <Loader2 className="size-4 animate-spin" aria-hidden />
+                      Extracting &amp; embedding…
                     </>
                   ) : (
                     <>
-                      <FileText className="size-4" aria-hidden />
-                      Upload &amp; ingest file
+                      <UploadCloud className="size-4" aria-hidden />
+                      Upload &amp; index
                     </>
                   )}
                 </Button>
